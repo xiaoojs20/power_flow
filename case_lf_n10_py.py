@@ -6,12 +6,12 @@ from pypower.idx_gen import GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, \
 from pypower.idx_brch import F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, \
     RATE_B, RATE_C, TAP, SHIFT, BR_STATUS, ANGMIN, ANGMAX
 
-def build_case_lfreq_n10_py(Ps=None, control_mode=1):
+def build_case_lfreq_n10_py(Ps=None, control_mode=1, pf=0.98):
     """Build 10-node LFAC system (node 11 removed, node 10 is slack)."""
     if Ps is None:
         Ps = np.array([200, 100, 200, 100, 100, 100, 100, 100])
     
-    # control_mode: 0 - Constant Q (Q=0), 1 - Constant PF (0.98 lagging)
+    # control_mode: 0 - Constant Q (Q=0), 1 - Constant PF
     
     # Base values
     Ub = 230e3
@@ -93,8 +93,8 @@ def build_case_lfreq_n10_py(Ps=None, control_mode=1):
     gen[0:8, PG] = Ps
     
     if control_mode == 1:
-        # 定功率因数控制 (Constant PF = 0.98 Lagging)
-        pf_target = 0.98
+        # 定功率因数控制 (Constant PF)
+        pf_target = pf
         tan_phi = np.sqrt(1/pf_target**2 - 1)
         gen[0:8, QG] = gen[0:8, PG] * tan_phi
     else:

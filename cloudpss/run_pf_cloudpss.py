@@ -1,13 +1,26 @@
 import json
 import numpy as np
-from pypower.runpf import runpf
-from case_lf_n10_py import build_case_lfreq_n10_py
+import sys
+import os
 
-def run_pf_python_n10():
-    from pypower.ppoption import ppoption
-    from pypower.runpf import runpf
-    from case_lf_n10_py import build_case_lfreq_n10_py
-    
+# Add parent directory to path for pypower access
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from pypower.runpf import runpf
+from pypower.ppoption import ppoption
+from pypower.idx_bus import VM
+from case_lf_n10_cloudpss import build_case_cloudpss
+
+class NumPyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.bool_, bool)):
+            return bool(obj)
+        return json.JSONEncoder.default(self, obj)
+
+def run_pf_cloudpss():
+    """Run power flow calculations using CloudPSS line parameters."""
     ppopt = ppoption(VERBOSE=0, OUT_ALL=0, PF_TOL=1e-8)
 
     scenarios = {
@@ -17,32 +30,22 @@ def run_pf_python_n10():
         'trip': np.array([0, 100, 200, 100, 100, 100, 100, 100])
     }
     
-    # helper for JSON serialization of numpy arrays
-    class NumPyEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, np.ndarray):
-                return obj.tolist()
-            if isinstance(obj, (np.bool_, bool)):
-                return bool(obj)
-            return json.JSONEncoder.default(self, obj)
-            
     all_results = {}
     modes = {
-        'q_const': 0.98,      # mode_val will be 0
-        'pf_const': 0.98,     # mode_val will be 1
-        'pf_099': 0.99       # mode_val will be 1
+        'q_const': {'mode': 0, 'pf': 1.0},
+        'pf_const': {'mode': 1, 'pf': 0.98},
+        'pf_099': {'mode': 1, 'pf': 0.99}
     }
-    
-    from pypower.idx_bus import VM
 
-    for mode_name, pf_val in modes.items():
+    for mode_name, config in modes.items():
         all_results[mode_name] = {}
-        print(f"Processing Mode: {mode_name}")
-        mode_int = 1 if mode_name != 'q_const' else 0
+        mode_val = config['mode']
+        pf_val = config['pf']
+        print(f"Processing Mode: {mode_name} (PF={pf_val})")
         
         for name, Ps in scenarios.items():
             try:
-                ppc = build_case_lfreq_n10_py(Ps, control_mode=mode_int, pf=pf_val)
+                ppc = build_case_cloudpss(Ps, control_mode=mode_val, pf=pf_val)
                 res = runpf(ppc, ppopt)
                 
                 output = {
@@ -52,7 +55,8 @@ def run_pf_python_n10():
                     'branch': res[0]['branch'].tolist()
                 }
                 all_results[mode_name][name] = output
-                print(f"  Scenario {name} processed.")
+                status = "✓" if output['success'] else "✗"
+                print(f"  Scenario {name}: {status}")
             except Exception as e:
                 print(f"  Error in scenario {name}: {e}")
                 
@@ -62,7 +66,7 @@ def run_pf_python_n10():
         for scale in np.arange(0.1, 1.6, 0.1):
             Ps_sweep = base_ps * scale
             try:
-                ppc_s = build_case_lfreq_n10_py(Ps_sweep, control_mode=mode_int, pf=pf_val)
+                ppc_s = build_case_cloudpss(Ps_sweep, control_mode=mode_val, pf=pf_val)
                 res_s = runpf(ppc_s, ppopt)
                 if res_s[0]['success']:
                     row = [float(scale)] + res_s[0]['bus'][:, VM].tolist()
@@ -70,10 +74,11 @@ def run_pf_python_n10():
             except:
                 pass
         all_results[mode_name]['sweep'] = sweep_results
+        print(f"  P-V sweep: {len(sweep_results)} converged points")
 
     with open('results_python.json', 'w') as f:
         json.dump(all_results, f, cls=NumPyEncoder, indent=4)
-    print("PYPOWER 10-node scenarios and sweeps completed for all modes.")
+    print("\nCloudPSS power flow completed. Results saved to results_python.json")
 
 if __name__ == "__main__":
-    run_pf_python_n10()
+    run_pf_cloudpss()

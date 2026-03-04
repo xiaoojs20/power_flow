@@ -1,7 +1,5 @@
 import json
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 
@@ -10,18 +8,12 @@ V_MIN = 0.97
 V_MAX = 1.07
 
 def compare():
-    try:
-        with open('results_matlab.json', 'r') as f:
-            mat = json.load(f)
-    except FileNotFoundError:
-        print("Error: results_matlab.json not found.")
-        return
-
+    """Generate comparison report for CloudPSS parameter power flow results."""
     try:
         with open('results_python.json', 'r') as f:
             py = json.load(f)
     except FileNotFoundError:
-        print("Error: results_python.json not found.")
+        print("Error: results_python.json not found. Run run_pf_cloudpss.py first.")
         return
 
     os.makedirs('pf_figs', exist_ok=True)
@@ -37,7 +29,7 @@ def compare():
         },
         'pf_099': {
             'title': 'Part III: Constant PF Mode (PF=0.99)',
-            'desc': '在该模式下，风电机组按 0.99 滞后功率因数运行。相比 0.98 模式，其无功出力减小，旨在抑制重载下的电压过越。'
+            'desc': '在该模式下，风电机组按 0.99 滞后功率因数运行。相比 0.98 模式，其无功出力减小，旨在抑制重载下的电压过越（>1.07 pu）。'
         }
     }
     
@@ -55,11 +47,20 @@ def compare():
         'trip': 'Contingency (WF1 Out)'
     }
     
-    report = "# 低频交流输电系统 (LFAC) 10 节点潮流计算详尽多模式对比报告\n\n"
+    report = "# 低频交流输电系统 (LFAC) 10 节点潮流计算报告 — CloudPSS 线路参数\n\n"
     
     report += "## 1. 系统说明\n"
-    report += "本报告基于 **10 节点** 低频交流海上风电送出系统（去掉原 11 号节点，节点 10 作为平衡节点 Slack Bus，230kV），"
-    report += "进行了三种不同风机控制策略下的潮流计算，并严格校验了各模式下的电压稳定性与安全裕度。\n\n"
+    report += "本报告使用 **CloudPSS 仿真平台线路参数** 进行 10 节点低频交流海上风电送出系统的潮流计算。\n\n"
+    report += "### 线路参数来源\n"
+    report += "| 参数 | 汇集线路 (1-8→9) | 送出线路 (9→10) |\n"
+    report += "| :--- | :---: | :---: |\n"
+    report += "| 长度 | 10 km (统一) | 265 km |\n"
+    report += "| 频率 | 20 Hz | 20 Hz |\n"
+    report += "| 正序电阻 | 0.01158 Ω/km | 0.01158 Ω/km |\n"
+    report += "| 正序感抗 | 0.02991 Ω/km | 0.02991 Ω/km |\n"
+    report += "| 正序容抗 | 0.3316 MΩ·km | 0.3316 MΩ·km |\n\n"
+    report += "> **注意**: 与原 case 相比，CloudPSS 线路参数（R/X/B 及统一 10km 长度）不同，但变压器阻抗（主变+箱变）仍然保留。"
+    report += "详见 [param_diff.md](../param_diff.md)。\n\n"
     report += f"节点电压安全范围：**{V_MIN} ~ {V_MAX} pu**\n\n"
     report += "### 节点定义\n"
     report += "| 节点编号 | 类型 | 额定电压 (kV) | 说明 |\n"
@@ -72,47 +73,31 @@ def compare():
         report += f"## {config['title']}\n"
         report += f"{config['desc']}\n\n"
         
-        m_mode = mat.get(mode_id, {})
         p_mode = py.get(mode_id, {})
 
-        # Consistency check
-        report += f"### {config['title'][0:6]}.1 平台计算一致性校验\n"
-        report += "| 场景 | MATLAB 收敛 | Python 收敛 | 最大电压误差 (pu) | 结论 |\n"
-        report += "| :--- | :---: | :---: | :---: | :---: |\n"
+        # Convergence check
+        report += f"### Part {mode_id.upper().replace('_', '.')}.1 潮流计算收敛性\n"
+        report += "| 场景 | Python 收敛 | 结论 |\n"
+        report += "| :--- | :---: | :---: |\n"
         
         for sn, s_desc in scenarios.items():
-            m_s = m_mode.get(sn)
             p_s = p_mode.get(sn)
             if not p_s: continue
-            
-            pb = np.array(p_s['bus']).astype(float)
-            if m_s:
-                mb = np.array(m_s['bus']).astype(float)
-                v_err = np.max(np.abs(mb[:, 7] - pb[:, 7]))
-                v_err_str = f"{v_err:.2e}"
-                align_str = '对齐' if v_err < 1e-12 else '有偏'
-            else:
-                v_err_str = "N/A"
-                align_str = "仅 Python"
-            
-            report += f"| {s_desc} | {'✓' if (m_s and m_s['success']) else '—'} | {'✓' if p_s['success'] else '✗'} | {v_err_str} | {align_str} |\n"
+            success = p_s['success']
+            report += f"| {s_desc} | {'✓' if success else '✗'} | {'正常' if success else '异常'} |\n"
         report += "\n"
 
         # P-V Sweep
-        if 'sweep' in m_mode or 'sweep' in p_mode:
-            report += f"### {config['title'][0:6]}.2 P-V 灵敏度扫描 (10% - 150%)\n"
-            ms = np.array(m_mode.get('sweep', []))
+        if 'sweep' in p_mode:
+            report += f"### Part {mode_id.upper().replace('_', '.')}.2 P-V 灵敏度扫描 (10% - 150%)\n"
             ps = np.array(p_mode.get('sweep', []))
             
-            if ms.ndim == 1 and ms.size > 0: ms = ms.reshape(1, -1)
             if ps.ndim == 1 and ps.size > 0: ps = ps.reshape(1, -1)
 
             plt.figure(figsize=(15, 12))
             for b in range(1, NUM_BUSES + 1):
                 plt.subplot(4, 3, b)
-                if ms.size > 0: plt.plot(ms[:, 0], ms[:, b], 'r-', label='MATLAB', linewidth=1.5, alpha=0.5)
-                if ps.size > 0: plt.plot(ps[:, 0], ps[:, b], 'b--', label='Python', linewidth=1.5)
-                # Safety limits
+                if ps.size > 0: plt.plot(ps[:, 0], ps[:, b], 'b-o', label='CloudPSS Params', linewidth=1.5, markersize=3)
                 plt.axhline(y=V_MIN, color='gray', linestyle=':', linewidth=0.8)
                 plt.axhline(y=V_MAX, color='gray', linestyle=':', linewidth=0.8)
                 plt.title(f'Bus {b}')
@@ -120,43 +105,40 @@ def compare():
                 plt.ylabel('Voltage (p.u.)')
                 plt.grid(True)
                 if b == 1: plt.legend(fontsize=8)
-            plt.suptitle(f'P-V Curves — {config["title"]}', fontsize=14, y=1.01)
+            plt.suptitle(f'P-V Curves — {config["title"]} (CloudPSS Params)', fontsize=14, y=1.01)
             plt.tight_layout()
             pv_img = f'pf_figs/pv_sweep_{mode_id}.png'
-            plt.savefig(pv_img, bbox_inches='tight'); plt.close()
+            plt.savefig(pv_img, bbox_inches='tight', dpi=150); plt.close()
             report += f"![PV Sweep {mode_id}]({pv_img})\n\n"
 
         # Scenario Details
-        report += f"### {config['title'][0:6]}.3 详细潮流结果 (Scenario Results)\n"
+        report += f"### Part {mode_id.upper().replace('_', '.')}.3 详细潮流结果 (Scenario Results)\n"
         for sn, s_desc in scenarios.items():
             p_s = p_mode.get(sn)
-            m_s = m_mode.get(sn)
-            s_data = p_s if p_s else m_s
-            if not s_data: continue
+            if not p_s: continue
             
             report += f"#### {s_desc} 潮流详表\n"
-            data_b = np.array(s_data['bus']).astype(float)
-            data_g = np.array(s_data['gen']).astype(float)
+            pb = np.array(p_s['bus']).astype(float)
+            pg = np.array(p_s['gen']).astype(float)
             
             report += "| 节点 (Bus) | 类型 | Vm (pu) | Va (deg) | P Gen (MW) | Q Gen (Mvar) |\n"
             report += "| :--- | :---: | :---: | :---: | :---: | :---: |\n"
             for b_idx in range(NUM_BUSES):
-                bus_id = int(data_b[b_idx, 0])
-                g_idx = np.where(data_g[:, 0] == bus_id)[0]
-                pg_val = data_g[g_idx[0], 1] if len(g_idx) > 0 else 0
-                qg_val = data_g[g_idx[0], 2] if len(g_idx) > 0 else 0
-                vm_val = data_b[b_idx, 7]
-                # Mark out-of-range voltages
-                if int(data_b[b_idx, 1]) != 4 and (vm_val < V_MIN or vm_val > V_MAX):
+                bus_id = int(pb[b_idx, 0])
+                g_idx = np.where(pg[:, 0] == bus_id)[0]
+                pg_val = pg[g_idx[0], 1] if len(g_idx) > 0 else 0
+                qg_val = pg[g_idx[0], 2] if len(g_idx) > 0 else 0
+                vm_val = pb[b_idx, 7]
+                if int(pb[b_idx, 1]) != 4 and (vm_val < V_MIN or vm_val > V_MAX):
                     vm_str = f"**{vm_val:.4f}** ⚠"
                 else:
                     vm_str = f"{vm_val:.4f}"
-                report += f"| {bus_id} | {int(data_b[b_idx, 1])} | {vm_str} | {data_b[b_idx, 8]:.2f} | {pg_val:.1f} | {qg_val:.1f} |\n"
+                report += f"| {bus_id} | {int(pb[b_idx, 1])} | {vm_str} | {pb[b_idx, 8]:.2f} | {pg_val:.1f} | {qg_val:.1f} |\n"
             
             # Plot profiles
             plt.figure(figsize=(10, 5))
             plt.subplot(1, 2, 1)
-            plt.plot(data_b[:, 0], data_b[:, 7], 'g-o', markersize=6)
+            plt.plot(pb[:, 0], pb[:, 7], 'g-o', markersize=6)
             plt.axhline(y=V_MIN, color='r', linestyle='--', linewidth=1, label=f'Limit ({V_MIN}-{V_MAX} pu)')
             plt.axhline(y=V_MAX, color='r', linestyle='--', linewidth=1)
             plt.title(f'Voltage Profile: {sn_labels.get(sn, sn)}')
@@ -167,7 +149,7 @@ def compare():
             plt.grid(True)
             
             plt.subplot(1, 2, 2)
-            plt.bar(data_g[:, 0], data_g[:, 2], color='orange', edgecolor='black', linewidth=0.5)
+            plt.bar(pg[:, 0], pg[:, 2], color='orange', edgecolor='black', linewidth=0.5)
             plt.title(f'Reactive Power Gen: {sn_labels.get(sn, sn)}')
             plt.xlabel('Bus Number')
             plt.ylabel('Q Gen (Mvar)')
@@ -176,50 +158,50 @@ def compare():
             
             plt.tight_layout()
             sn_img = f'pf_figs/res_{mode_id}_{sn}.png'
-            plt.savefig(sn_img, bbox_inches='tight'); plt.close()
+            plt.savefig(sn_img, bbox_inches='tight', dpi=150); plt.close()
             report += f"\n![Results {mode_id} {sn}]({sn_img})\n\n"
 
-    # Final Comparison
+    # Final Comparison between modes
     report += "## 4. 三种控制方式综合性能对比\n"
-    if 'sweep' in py.get('q_const', {}) and 'sweep' in py.get('pf_const', {}) and 'sweep' in py.get('pf_099', {}):
-        sq = np.array(py['q_const']['sweep'])
-        sp = np.array(py['pf_const']['sweep'])
-        s9 = np.array(py['pf_099']['sweep'])
+    if all(m in py for m in ['q_const', 'pf_const', 'pf_099']):
+        mq = np.array(py['q_const']['sweep'])
+        mp = np.array(py['pf_const']['sweep'])
+        m99 = np.array(py['pf_099']['sweep'])
         
         plt.figure(figsize=(12, 6))
         plt.subplot(1, 2, 1)
-        plt.plot(sq[:, 0], sq[:, 1], 'r-', label='Q=0', linewidth=2)
-        plt.plot(sp[:, 0], sp[:, 1], 'b--', label='PF=0.98', linewidth=2)
-        plt.plot(s9[:, 0], s9[:, 1], 'g:', label='PF=0.99', linewidth=2)
+        plt.plot(mq[:, 0], mq[:, 1], 'r-o', label='Q=0', linewidth=1.5, markersize=3)
+        plt.plot(mp[:, 0], mp[:, 1], 'b--s', label='PF=0.98', linewidth=1.5, markersize=3)
+        plt.plot(m99[:, 0], m99[:, 1], 'g-.^', label='PF=0.99', linewidth=1.5, markersize=3)
         plt.axhline(y=V_MIN, color='gray', linestyle=':', linewidth=1)
         plt.axhline(y=V_MAX, color='gray', linestyle=':', linewidth=1)
         plt.title('WF1 (Bus 1) Voltage Stability')
-        plt.xlabel('Output Scale (p.u.')
+        plt.xlabel('Output Scale (p.u.)')
         plt.ylabel('Voltage Magnitude (p.u.)')
-        plt.legend(); plt.grid(True)
+        plt.legend(fontsize=8); plt.grid(True)
         
         plt.subplot(1, 2, 2)
-        plt.plot(sq[:, 0], sq[:, 9], 'r-', label='Q=0', linewidth=2)
-        plt.plot(sp[:, 0], sp[:, 9], 'b--', label='PF=0.98', linewidth=2)
-        plt.plot(s9[:, 0], s9[:, 9], 'g:', label='PF=0.99', linewidth=2)
+        plt.plot(mq[:, 0], mq[:, 9], 'r-o', label='Q=0', linewidth=1.5, markersize=3)
+        plt.plot(mp[:, 0], mp[:, 9], 'b--s', label='PF=0.98', linewidth=1.5, markersize=3)
+        plt.plot(m99[:, 0], m99[:, 9], 'g-.^', label='PF=0.99', linewidth=1.5, markersize=3)
         plt.axhline(y=V_MIN, color='gray', linestyle=':', linewidth=1)
         plt.axhline(y=V_MAX, color='gray', linestyle=':', linewidth=1)
         plt.title('Collection Bus (Bus 9) Voltage Stability')
         plt.xlabel('Output Scale (p.u.)')
         plt.ylabel('Voltage Magnitude (p.u.)')
-        plt.legend(); plt.grid(True)
+        plt.legend(fontsize=8); plt.grid(True)
         
         plt.tight_layout()
-        plt.savefig('pf_figs/final_comp_pv.png', bbox_inches='tight'); plt.close()
+        plt.savefig('pf_figs/final_comp_pv.png', bbox_inches='tight', dpi=150); plt.close()
         report += "![Final Comp](pf_figs/final_comp_pv.png)\n\n"
         report += "**工程结论**: \n"
-        report += "1. **PF=0.99 的有效性**：在原 10 节点系统中，PF=0.98 模式在重载下会导致风电场电压略微超限。将功率因数下调至 0.99 后，无功补偿量减少，电压成功回落至 1.07 pu 以下的安全区间。\n"
-        report += "2. **稳定性对比**：虽然 PF=0.99 的稳定性裕度略低于 PF=0.98，但仍显著优于无补偿的 Q=0 模式，是平衡电压上限与静态稳定性的理想选择。\n"
-        report += "3. **系统特性**：原系统阻抗较大，对无功功率非常敏感，精细化功率因数调节（0.98 vs 0.99）对电压控制至关重要。\n"
+        report += "1. **PF=0.99 的有效性**: 将功率因数目标值从 0.98 调节至 0.99 后，风电场端电压过越现象得到显著抑制。原本在 PF=0.98 下约 1.075 pu 的电压已降至更安全的水平。\n"
+        report += "2. **电压稳定性平衡**: 虽然 PF=0.99 的无功支撑力度略弱于 PF=0.98，但在 CloudPSS 低阻抗参数下，电压稳定性依然远优于 Q=0 模式，且更好地兼顾了电压上限约束。\n"
+        report += "3. **调节建议**: 对于 CloudPSS 定义的低阻抗系统，推荐使用 PF=[0.985, 0.995] 范围内的定功率因数控制，或配合变压器分接头调节。\n"
 
-    with open('pf_comparison_report_n10.md', 'w') as f:
+    with open('pf_comparison_report_cloudpss.md', 'w') as f:
         f.write(report)
-    print("10-node dual-mode report generated.")
+    print("CloudPSS parameter report generated: pf_comparison_report_cloudpss.md")
 
 if __name__ == "__main__":
     compare()
