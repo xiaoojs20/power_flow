@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+power_venv/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# MATLAB
+*.asv
+
+# OS
+.DS_Store

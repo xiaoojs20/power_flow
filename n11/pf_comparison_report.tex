@@ -1,0 +1,176 @@
+\documentclass[11pt,a4paper]{ctexart}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{amssymb}
+
+\geometry{left=2.5cm,right=2.5cm,top=3cm,bottom=3cm}
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
+
+\title{低频交流输电系统 (LFAC) 潮流计算详尽双模式对比报告}
+\author{新能源工作室}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{仿真验证说明}
+本报告对海上风电低频送出系统进行了两种不同风机控制策略下的潮流计算，并严格校验了 MATLAB (MATPOWER) 与 Python (PYPOWER) 的一致性。
+
+\section{Part I: Constant Q Mode (Q=0)}
+在该模式下，所有风电机组（节点 1-8）的无功出力固定为 0，系统完全依靠变频站和平衡节点支撑电压。
+
+\subsection{Part I.1 平台计算一致性校验}
+\begin{table}[H]
+\centering
+\caption{Constant Q 模式一致性校验}
+\begin{tabular}{lcccc}
+\toprule
+场景 & MATLAB 收敛 & Python 收敛 & 最大电压误差 (pu) & 结论 \\
+\midrule
+标准工况 & \checkmark & \checkmark & 3.33e-16 & 对齐 \\
+轻载工况 & \checkmark & \checkmark & 3.33e-16 & 对齐 \\
+重载工况 & \checkmark & \checkmark & 8.88e-16 & 对齐 \\
+故障工况 & \checkmark & \checkmark & 6.66e-16 & 对齐 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Part I.2 P-V 灵敏度扫描 (10\% - 150\%)}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{pf_figs/pv_sweep_q_const.png}
+\caption{Constant Q 模式各节点 P-V 曲线}
+\end{figure}
+
+\subsection{Part I.3 详细潮流结果 (Scenario Results)}
+
+\subsubsection{标准工况 潮流详表}
+\begin{longtable}{ccccccc}
+\caption{Constant Q 模式 - 标准工况潮流结果} \\
+\toprule
+节点 (Bus) & 类型 & Vm (pu) & Va (deg) & P Gen (MW) & Q Gen (Mvar) \\
+\midrule
+\endhead
+1 & 1 & 0.9609 & 35.87 & 200.0 & 0.0 \\
+2 & 1 & 0.9756 & 35.77 & 100.0 & 0.0 \\
+3 & 1 & 0.9688 & 36.32 & 200.0 & 0.0 \\
+4 & 1 & 0.9642 & 35.68 & 100.0 & 0.0 \\
+5 & 1 & 0.9756 & 35.77 & 100.0 & 0.0 \\
+6 & 1 & 0.9642 & 35.68 & 100.0 & 0.0 \\
+7 & 1 & 0.9642 & 35.68 & 100.0 & 0.0 \\
+8 & 1 & 0.9690 & 35.72 & 100.0 & 0.0 \\
+9 & 1 & 0.9824 & 22.36 & 0.0 & 0.0 \\
+10 & 2 & 1.0000 & 5.22 & 0.0 & 483.3 \\
+11 & 3 & 1.0000 & 0.00 & -921.4 & 42.0 \\
+\bottomrule
+\end{longtable}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{pf_figs/res_q_const_standard.png}
+\caption{Constant Q 模式标准工况剖面}
+\end{figure}
+
+\subsubsection{轻载工况 潮流详表}
+\begin{longtable}{ccccccc}
+\caption{Constant Q 模式 - 轻载工况潮流结果} \\
+\toprule
+节点 (Bus) & 类型 & Vm (pu) & Va (deg) & P Gen (MW) & Q Gen (Mvar) \\
+\midrule
+\endhead
+1 & 1 & 1.0328 & 12.47 & 60.0 & 0.0 \\
+2 & 1 & 1.0574 & 12.34 & 30.0 & 0.0 \\
+3 & 1 & 1.0435 & 12.54 & 60.0 & 0.0 \\
+4 & 1 & 1.0391 & 12.39 & 30.0 & 0.0 \\
+5 & 1 & 1.0574 & 12.34 & 30.0 & 0.0 \\
+6 & 1 & 1.0391 & 12.39 & 30.0 & 0.0 \\
+7 & 1 & 1.0391 & 12.39 & 30.0 & 0.0 \\
+8 & 1 & 1.0468 & 12.37 & 30.0 & 0.0 \\
+9 & 1 & 1.0330 & 6.09 & 0.0 & 0.0 \\
+10 & 2 & 1.0000 & 1.66 & 0.0 & -39.3 \\
+11 & 3 & 1.0000 & 0.00 & -293.5 & 4.3 \\
+\bottomrule
+\end{longtable}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{pf_figs/res_q_const_low.png}
+\caption{Constant Q 模式轻载工况剖面}
+\end{figure}
+
+\section{Part II: Constant PF Mode (PF=0.98)}
+在该模式下，风电机组按 0.98 滞后功率因数运行，无功出力随有功同步变化，提供就地电压支撑。
+
+\subsection{Part II.1 平台计算一致性校验}
+\begin{table}[H]
+\centering
+\caption{Constant PF 模式一致性校验}
+\begin{tabular}{lcccc}
+\toprule
+场景 & MATLAB 收敛 & Python 收敛 & 最大电压误差 (pu) & 结论 \\
+\midrule
+标准工况 & \checkmark & \checkmark & 4.44e-16 & 对齐 \\
+轻载工况 & \checkmark & \checkmark & 2.22e-16 & 对齐 \\
+重载工况 & \checkmark & \checkmark & 4.44e-16 & 对齐 \\
+故障工况 & \checkmark & \checkmark & 4.44e-16 & 对齐 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Part II.2 P-V 灵敏度扫描 (10\% - 150\%)}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{pf_figs/pv_sweep_pf_const.png}
+\caption{Constant PF 模式各节点 P-V 曲线}
+\end{figure}
+
+\subsection{Part II.3 详细潮流结果 (Scenario Results)}
+
+\subsubsection{标准工况 潮流详表}
+\begin{longtable}{ccccccc}
+\caption{Constant PF 模式 - 标准工况潮流结果} \\
+\toprule
+节点 (Bus) & 类型 & Vm (pu) & Va (deg) & P Gen (MW) & Q Gen (Mvar) \\
+\midrule
+\endhead
+1 & 1 & 1.0879 & 31.10 & 200.0 & 40.6 \\
+2 & 1 & 1.1038 & 31.00 & 100.0 & 20.3 \\
+3 & 1 & 1.0981 & 31.40 & 200.0 & 40.6 \\
+4 & 1 & 1.0909 & 30.95 & 100.0 & 20.3 \\
+5 & 1 & 1.1038 & 31.00 & 100.0 & 20.3 \\
+6 & 1 & 1.0909 & 30.95 & 100.0 & 20.3 \\
+7 & 1 & 1.0909 & 30.95 & 100.0 & 20.3 \\
+8 & 1 & 1.0964 & 30.98 & 100.0 & 20.3 \\
+9 & 1 & 1.0605 & 20.11 & 0.0 & 0.0 \\
+10 & 2 & 1.0000 & 5.29 & 0.0 & 178.1 \\
+11 & 3 & 1.0000 & 0.00 & -933.5 & 43.1 \\
+\bottomrule
+\end{longtable}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{pf_figs/res_pf_const_standard.png}
+\caption{Constant PF 模式标准工况剖面}
+\end{figure}
+
+\section{两种控制方式综合性能对比}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{pf_figs/final_comp_pv.png}
+\caption{控制模式对比与电压稳定性分析}
+\end{figure}
+
+\textbf{工程结论}: 
+\begin{enumerate}
+    \item 定功率因数控制能通过就地提供无功功率，有效延缓远端电压随出力增加而下降的趋势。
+    \item 滞后功率因数 (Lagging PF) 对提升系统静态电压稳定极限有显著贡献。
+\end{enumerate}
+
+\end{document}
